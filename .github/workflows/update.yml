@@ -1,0 +1,52 @@
+name: Update index
+
+on:
+  schedule:
+    - cron: "23 14 * * *"        # every day at 14:23 UTC; publishes only when the data changed
+  workflow_dispatch: {}           # "Run workflow" button on the Actions tab
+  push:
+    branches: [main]
+    paths:                        # rerun when the Census shares or a backup Excel file are edited
+      - "data/weights.csv"
+      - "data/manual_upload/**"
+      - "pipeline/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-index
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Test that the code still reproduces the paper
+        run: python -W ignore -m unittest -v
+
+      - name: Download data, compute, check, rebuild site
+        env:
+          CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
+        run: python -W ignore -m pipeline.run
+
+      - name: Publish if anything changed
+        run: |
+          git add -A data site
+          if git diff --cached --quiet; then
+            echo "Nothing changed."
+            exit 0
+          fi
+          THROUGH=$(python -c "import json;print(json.load(open('data/meta.json'))['data_through'])")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update index: data through ${THROUGH}"
+          git push
