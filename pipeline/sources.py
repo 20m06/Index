@@ -46,8 +46,11 @@ def census_key():
 
 
 def _clean_key(value):
-    """Forgive common paste mistakes: spaces, quotes, or the whole 'CENSUS_API_KEY=...' line."""
-    value = re.sub(r"(?i)^\s*CENSUS_API_KEY\s*=", "", value)
+    """Forgive common paste mistakes: spaces, quotes, the 'CENSUS_API_KEY=...' line,
+    or the whole .env file (comment line included) pasted into the GitHub secret."""
+    m = re.search(r"(?im)^\s*CENSUS_API_KEY\s*=\s*[\"']?\s*([A-Za-z0-9]+)", value)
+    if m:
+        return m.group(1)
     return value.strip().strip('"').strip("'").strip()
 
 
