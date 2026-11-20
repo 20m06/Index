@@ -11,6 +11,7 @@ plus one row per month with cty_code "TOTAL": the whole district, all countries.
 """
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -32,7 +33,7 @@ class SourceError(RuntimeError):
 
 def census_key():
     """The key comes from the environment (GitHub secret) or from a local .env file."""
-    key = os.environ.get("CENSUS_API_KEY", "").strip()
+    key = _clean_key(os.environ.get("CENSUS_API_KEY", ""))
     if key:
         return key
     env = config.ROOT / ".env"
@@ -40,8 +41,14 @@ def census_key():
         for line in env.read_text(encoding="utf-8-sig").splitlines():
             name, _, value = line.partition("=")
             if name.strip() == "CENSUS_API_KEY":
-                return value.strip().strip('"').strip("'")
+                return _clean_key(value)
     return ""
+
+
+def _clean_key(value):
+    """Forgive common paste mistakes: spaces, quotes, or the whole 'CENSUS_API_KEY=...' line."""
+    value = re.sub(r"(?i)^\s*CENSUS_API_KEY\s*=", "", value)
+    return value.strip().strip('"').strip("'").strip()
 
 
 def _get(params, retries=3):

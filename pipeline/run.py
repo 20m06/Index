@@ -15,6 +15,7 @@ import csv
 import hashlib
 import io
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,7 +23,7 @@ from pathlib import Path
 from . import config, site
 from .checks import run_checks
 from .index import INDEX_COLUMNS, compute, index_csv_rows, load_weights
-from .sources import SourceError, fetch_census, newest_manual_upload, read_dataweb_excel
+from .sources import SourceError, census_key, fetch_census, newest_manual_upload, read_dataweb_excel
 
 RAW_COLUMNS = ["month", "cty_code", "country", "customs_value", "calculated_duties"]
 
@@ -42,10 +43,21 @@ def _read_csv(path):
         return list(csv.DictReader(f))
 
 
+def _report_error(title, message):
+    """Print the error; on GitHub it also appears on the run's public summary page."""
+    print(f"\n{title}: {message}")
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"::error title={title}::{message}")
+
+
 def get_rows(reports, excel=None):
     name_to_code = {name: code for rep in reports for code, (name, _) in rep.shares.items()}
     if excel:
         return read_dataweb_excel(Path(excel), name_to_code), f"USITC DataWeb export ({Path(excel).name})"
+    key = census_key()
+    # Safe to print: says whether a key exists and how long it is, never the key itself.
+    print(f"Census key found: {'yes' if key else 'NO'}"
+          + (f" ({len(key)} characters; Census keys are 40)" if key else ""))
     try:
         return fetch_census(), "U.S. Census Bureau International Trade API"
     except SourceError as e:
@@ -62,7 +74,11 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     reports = load_weights(config.WEIGHTS)
-    raw_rows, source = get_rows(reports, args.excel)
+    try:
+        raw_rows, source = get_rows(reports, args.excel)
+    except SourceError as e:
+        _report_error("Download failed - nothing was published", str(e))
+        return 1
     raw_rows.sort(key=lambda r: (r["month"], r["cty_code"]))
     index_rows = compute(raw_rows, reports)
 
@@ -71,9 +87,7 @@ def main(argv=None):
     for w in warnings:
         print("WARNING:", w)
     if errors:
-        print("\nCHECKS FAILED - nothing was published:")
-        for e in errors:
-            print("  -", e)
+        _report_error("Checks failed - nothing was published", "; ".join(errors[:10]))
         return 1
 
     raw_text = _csv_text(raw_rows, RAW_COLUMNS)
