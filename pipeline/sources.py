@@ -58,8 +58,15 @@ def _get(params, retries=3):
         try:
             request = urllib.request.Request(url, headers={"User-Agent": "small-importer-tariff-index"})
             with urllib.request.urlopen(request, timeout=180) as response:
-                if urllib.parse.urlparse(response.geturl()).path.endswith("_key.html"):
-                    raise SourceError("The Census API did not accept the key (check CENSUS_API_KEY).")
+                page = urllib.parse.urlparse(response.geturl()).path
+                if page.endswith("_key.html"):
+                    key = params.get("key", "")
+                    shape = ("letters and digits only" if key.isalnum() else
+                             "contains spaces or symbols, which a real key never does")
+                    raise SourceError(
+                        f"The Census API did not accept the key ({page.rsplit('/', 1)[-1]}). "
+                        f"The key it was given is {len(key)} characters long and {shape}; "
+                        f"a real Census key is 40 letters and digits. Re-paste CENSUS_API_KEY.")
                 if response.status == 204:
                     return []
                 body = response.read().decode("utf-8")
